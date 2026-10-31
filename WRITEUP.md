@@ -62,6 +62,19 @@ The OSCAL component claims seven HIPAA controls. Four are implemented: 164.312(a
 
 The policies apply to every bucket, table, function, IAM policy and stage in the plan, not only the starter's. The evidence vault and CloudTrail bucket are gated by the same rules. The bootstrap state bucket follows them too, but sits outside the gated plan.
 
+## How the pipeline produces evidence
+
+One change, traced end to end: PR #5 (the OSCAL layer).
+
+1. **PR opened.** `grc-gate` runs under `grc-pipeline-plan`, which is read-only and assumable only by this repo's pull requests. Plan reads state from S3: `No changes`. Policy check runs `opa test` (25/25), Conftest across every `hipaa.*` namespace, and `trestle validate` with profile resolution: all pass. Apply, Sign and Upload are skipped, because a PR cannot change infrastructure.
+2. **Merge.** Branch protection allows it only because the required `grc-gate` check is green. Admins are not exempt.
+3. **Push to `main`.** Run [`41242952679`](https://github.com/ComplianceOne/cgep-app-starter/actions/runs/41242952679) assumes `grc-pipeline-apply`, which is assumable only from `main`. It re-plans against the same state, re-runs the gate, and applies the saved plan.
+4. **Sign.** The run builds `evidence-41242952679-1-63bec784e70d.tar.gz`: plan, apply log, Conftest and OPA results, Terraform outputs, and a manifest with the commit, step outcomes and a SHA-256 per file. It signs the bundle with Cosign keyless signing; the certificate identity is `grc-gate.yml@refs/heads/main`, and the signature is recorded in Rekor.
+5. **Upload.** The bundle, its `.sha256` and its `.sig.bundle` are written to `s3://acme-health-intake-evidence-fcc40870/runs/41242952679-1/`. Object Lock GOVERNANCE retention applies on write: retained until 2027-10-31.
+6. **Verify.** `scripts/verify-evidence.sh 41242952679-1` prints `PASS integrity`, `PASS authenticity`, `PASS preservation` and `CHAIN INTACT`.
+
+The blocked path: PR #4 changes the Lambda policy to `dynamodb:*`. Run [`41242185852`](https://github.com/ComplianceOne/cgep-app-starter/actions/runs/41242185852) fails at Policy check with `[HIPAA 164.312(a)(1)] GAP-07 aws_iam_role_policy.lambda_inline allows wildcard action "dynamodb:*"`. Apply never runs, and GitHub refuses the merge.
+
 ## Trade-offs I accepted
 
 - **PowerUserAccess on the apply role.** It is broad. Writing a least-privilege policy for everything Terraform touches here (KMS, VPC, endpoints, Lambda, API Gateway, Logs, CloudTrail, S3, DynamoDB) would have taken most of a week and broken on every new resource type. I contained it instead: IAM only under the workload prefix, explicit denies on PHI reads and evidence deletion, and only `main` can assume it.
