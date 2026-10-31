@@ -1,0 +1,175 @@
+# .github/workflows/grc-gate.yml
+#
+# One workflow, five named steps, in order:
+#   1. Plan          terraform plan (every run)
+#   2. Policy check  HIPAA Rego suite via Conftest; fails closed (every run)
+#   3. Apply         main only, and only if 1 and 2 passed
+#   4. Sign          main only: Cosign keyless (GitHub OIDC -> Fulcio -> Rekor)
+#   5. Upload        main only: signed bundle into the Object Lock vault
+#
+# Pull requests assume the read-only grc-pipeline-plan role; pushes to
+# main assume grc-pipeline-apply. AWS enforces that split via each role's
+# OIDC trust policy (bootstrap/main.tf), not just this file.
+name: grc-gate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write # AWS OIDC + Cosign keyless signing
+  contents: read
+
+# Never run two applies against the same state at once.
+concurrency:
+  group: grc-gate-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  TF_DIR: terraform
+  EVIDENCE_DIR: evidence
+  IS_MAIN: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+
+jobs:
+  grc-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ github.event_name == 'pull_request' && vars.AWS_PLAN_ROLE_ARN || vars.AWS_APPLY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.16.1
+          terraform_wrapper: false
+
+      - name: Setup OPA
+        uses: open-policy-agent/setup-opa@v2
+        with:
+          version: 1.20.2
+
+      - name: Install Conftest
+        run: |
+          curl -fsSL https://github.com/open-policy-agent/conftest/releases/download/v0.50.0/conftest_0.50.0_Linux_x86_64.tar.gz \
+            | sudo tar -xz -C /usr/local/bin conftest
+
+      - name: Install Cosign
+        if: env.IS_MAIN == 'true'
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: v2.4.3
+
+      - name: 1 · Plan
+        id: plan
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/$EVIDENCE_DIR"
+          terraform init -input=false
+          terraform validate
+          # The read-only PR role cannot write the state lock file.
+          LOCK=$([[ "$IS_MAIN" == "true" ]] && echo true || echo false)
+          terraform plan -input=false -no-color -lock="$LOCK" -out=tfplan | tee "$GITHUB_WORKSPACE/$EVIDENCE_DIR/plan.txt"
+          terraform show -json tfplan > "$GITHUB_WORKSPACE/$EVIDENCE_DIR/plan.json"
+
+      - name: 2 · Policy check
+        id: policy
+        run: scripts/policy-gate.sh "$EVIDENCE_DIR/plan.json" "$EVIDENCE_DIR"
+
+      - name: 3 · Apply
+        id: apply
+        if: env.IS_MAIN == 'true'
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          terraform apply -input=false -no-color tfplan | tee "$GITHUB_WORKSPACE/$EVIDENCE_DIR/apply.txt"
+          terraform output -json > "$GITHUB_WORKSPACE/$EVIDENCE_DIR/outputs.json"
+
+      # Steps 4-5 run on main even if 1-3 failed: a failed gate or a failed
+      # apply is evidence too, and the manifest records each outcome.
+      - name: 4 · Sign
+        id: sign
+        if: always() && env.IS_MAIN == 'true'
+        env:
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          SHA: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+          PLAN_OUTCOME: ${{ steps.plan.outcome }}
+          POLICY_OUTCOME: ${{ steps.policy.outcome }}
+          APPLY_OUTCOME: ${{ steps.apply.outcome }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE_DIR"
+          jq -n \
+            --arg repo "$GITHUB_REPOSITORY" --arg sha "$SHA" --arg actor "$ACTOR" \
+            --arg run_id "$RUN_ID" --arg attempt "$RUN_ATTEMPT" \
+            --arg created "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg plan "$PLAN_OUTCOME" --arg policy "$POLICY_OUTCOME" --arg apply "$APPLY_OUTCOME" \
+            --arg framework "HIPAA Security Rule (45 CFR 164 Subpart C)" \
+            '{repo:$repo, commit:$sha, actor:$actor, run_id:$run_id, run_attempt:$attempt,
+              created_utc:$created, framework:$framework,
+              steps:{plan:$plan, policy_check:$policy, apply:$apply},
+              files:[]}' > "$EVIDENCE_DIR/manifest.json"
+          # Per-file hashes inside the bundle, so any one file can be checked alone.
+          ( cd "$EVIDENCE_DIR" && find . -type f ! -name manifest.json -exec sha256sum {} + ) \
+            | jq -R 'capture("^(?<sha256>\\S+)\\s+\\./(?<file>.+)$")' | jq -s . > files.json
+          jq --slurpfile f files.json '.files = $f[0]' "$EVIDENCE_DIR/manifest.json" > m.tmp && mv m.tmp "$EVIDENCE_DIR/manifest.json"
+
+          BUNDLE="evidence-${RUN_ID}-${RUN_ATTEMPT}-${SHA:0:12}.tar.gz"
+          tar -czf "$BUNDLE" -C "$EVIDENCE_DIR" .
+          sha256sum "$BUNDLE" | awk '{print $1}' > "$BUNDLE.sha256"
+          cosign sign-blob --yes --bundle "$BUNDLE.sig.bundle" "$BUNDLE"
+          echo "bundle=$BUNDLE" >> "$GITHUB_OUTPUT"
+
+      - name: 5 · Upload
+        id: upload
+        if: always() && env.IS_MAIN == 'true' && steps.sign.outcome == 'success'
+        env:
+          VAULT: ${{ vars.EVIDENCE_BUCKET }}
+          BUNDLE: ${{ steps.sign.outputs.bundle }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          PREFIX="runs/${RUN_ID}-${RUN_ATTEMPT}"
+          # Object Lock default retention (GOVERNANCE, 365d) applies on write.
+          for f in "$BUNDLE" "$BUNDLE.sha256" "$BUNDLE.sig.bundle"; do
+            aws s3 cp "$f" "s3://${VAULT}/${PREFIX}/${f}"
+          done
+          HEAD=$(aws s3api head-object --bucket "$VAULT" --key "${PREFIX}/${BUNDLE}")
+          jq -n \
+            --arg vault "$VAULT" --arg key "${PREFIX}/${BUNDLE}" \
+            --arg version "$(jq -r .VersionId <<<"$HEAD")" \
+            --arg mode "$(jq -r .ObjectLockMode <<<"$HEAD")" \
+            --arg until "$(jq -r .ObjectLockRetainUntilDate <<<"$HEAD")" \
+            --arg sha256 "$(cat "$BUNDLE.sha256")" --arg commit "$SHA" --arg run_id "$RUN_ID" \
+            '{vault:$vault, bundle_key:$key, version_id:$version, object_lock_mode:$mode,
+              retain_until:$until, sha256:$sha256, commit:$commit, run_id:$run_id}' > receipt.json
+          aws s3 cp receipt.json "s3://${VAULT}/${PREFIX}/receipt.json"
+          cat receipt.json
+          {
+            echo "### Evidence filed"
+            echo '```json'; cat receipt.json; echo '```'
+            echo "Verify: \`scripts/verify-evidence.sh ${RUN_ID}-${RUN_ATTEMPT}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep evidence as a run artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: grc-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.EVIDENCE_DIR }}/
+            evidence-*.tar.gz*
+            receipt.json
+          if-no-files-found: ignore
+          retention-days: 90
