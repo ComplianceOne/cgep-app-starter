@@ -174,25 +174,26 @@ resource "aws_iam_role_policy_attachment" "lambda_basic" {
 # GAP-07 closed — least privilege. The handler only calls put_item and
 # put_object (see lambda/handler.py), so those are the only grants.
 # HIPAA 164.312(a)(1) — Access control.
-resource "aws_iam_role_policy" "lambda_inline" {
-  name = "intake-data-access"
-  role = aws_iam_role.lambda.id
+# Authored as a policy document so actions are visible to the policy
+# gate even on a fresh plan (jsonencode with unknown ARNs is opaque).
+data "aws_iam_policy_document" "lambda_inline" {
+  statement {
+    effect    = "Allow"
+    actions   = ["dynamodb:PutItem"]
+    resources = [aws_dynamodb_table.intake.arn]
+  }
 
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect   = "Allow"
-        Action   = "dynamodb:PutItem"
-        Resource = aws_dynamodb_table.intake.arn
-      },
-      {
-        Effect   = "Allow"
-        Action   = "s3:PutObject"
-        Resource = "${aws_s3_bucket.uploads.arn}/uploads/*"
-      }
-    ]
-  })
+  statement {
+    effect    = "Allow"
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.uploads.arn}/uploads/*"]
+  }
+}
+
+resource "aws_iam_role_policy" "lambda_inline" {
+  name   = "intake-data-access"
+  role   = aws_iam_role.lambda.id
+  policy = data.aws_iam_policy_document.lambda_inline.json
 }
 
 resource "aws_lambda_function" "intake" {

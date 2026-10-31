@@ -17,15 +17,16 @@ resource "aws_kms_alias" "phi" {
 
 # The Lambda writes PHI into the CMK-encrypted bucket and table, so it
 # needs to use the key. Scoped to this key only.
+data "aws_iam_policy_document" "lambda_kms" {
+  statement {
+    effect    = "Allow"
+    actions   = ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"]
+    resources = [aws_kms_key.phi.arn]
+  }
+}
+
 resource "aws_iam_role_policy" "lambda_kms" {
-  name = "${local.name_prefix}-lambda-kms-${local.suffix}"
-  role = aws_iam_role.lambda.id
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"]
-      Resource = aws_kms_key.phi.arn
-    }]
-  })
+  name   = "${local.name_prefix}-lambda-kms-${local.suffix}"
+  role   = aws_iam_role.lambda.id
+  policy = data.aws_iam_policy_document.lambda_kms.json
 }
