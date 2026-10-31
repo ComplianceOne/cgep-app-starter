@@ -23,7 +23,7 @@ resource "aws_kms_key" "audit" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
+    Statement = concat([
       {
         Sid       = "AccountAdministersKeyViaIAM"
         Effect    = "Allow"
@@ -61,7 +61,20 @@ resource "aws_kms_key" "audit" {
           }
         }
       }
-    ]
+      ],
+      # Grader read access (see evidence_vault.tf): decrypt via S3 only, and
+      # only for objects in the evidence vault.
+      length(var.evidence_readers) == 0 ? [] : [{
+        Sid       = "EvidenceReadersDecryptViaS3"
+        Effect    = "Allow"
+        Principal = { AWS = var.evidence_readers }
+        Action    = ["kms:Decrypt", "kms:DescribeKey"]
+        Resource  = "*"
+        Condition = {
+          StringEquals = { "kms:ViaService" = "s3.${var.aws_region}.amazonaws.com" }
+          StringLike   = { "kms:EncryptionContext:aws:s3:arn" = "arn:aws:s3:::${local.name_prefix}-evidence-${local.suffix}*" }
+        }
+    }])
   })
 }
 

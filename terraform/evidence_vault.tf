@@ -71,6 +71,23 @@ data "aws_iam_policy_document" "evidence" {
       values   = ["false"]
     }
   }
+
+  # Read-only access for named external verifiers (e.g. the grader): exactly
+  # what scripts/verify-evidence.sh needs, nothing that can alter or delete.
+  dynamic "statement" {
+    for_each = length(var.evidence_readers) == 0 ? [] : [1]
+    content {
+      sid       = "EvidenceReadersVerifyOnly"
+      effect    = "Allow"
+      actions   = ["s3:ListBucket", "s3:GetObject", "s3:GetObjectVersion", "s3:GetObjectRetention"]
+      resources = [aws_s3_bucket.evidence.arn, "${aws_s3_bucket.evidence.arn}/runs/*"]
+
+      principals {
+        type        = "AWS"
+        identifiers = var.evidence_readers
+      }
+    }
+  }
 }
 
 resource "aws_s3_bucket_policy" "evidence" {

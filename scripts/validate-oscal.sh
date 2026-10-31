@@ -11,6 +11,8 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 EVIDENCE_DIR="${1:-}"
+# Absolute before we cd into the throwaway workspace.
+[[ -n "$EVIDENCE_DIR" ]] && { mkdir -p "$EVIDENCE_DIR"; EVIDENCE_DIR="$(cd "$EVIDENCE_DIR" && pwd)"; }
 TRESTLE="${TRESTLE:-trestle}"
 WS=$(mktemp -d); trap 'rm -rf "$WS"' EXIT
 

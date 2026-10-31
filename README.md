@@ -1,80 +1,52 @@
-# cgep-app-starter
+# Acme Health Patient Intake API: governed
 
-> Patient Intake API for "Acme Health". The deliberately-flawed workload your **CGE-P capstone** wraps with GRC controls.
+The [cgep-app-starter](https://github.com/GRCEngClub/cgep-app-starter) workload, made audit-defensible against the **HIPAA Security Rule**. The design reasoning is in **[WRITEUP.md](WRITEUP.md)**.
 
-## What this is
+Every push to `main` is planned, checked against seven HIPAA policies, applied, signed with Cosign (keyless, GitHub OIDC), and filed in an S3 Object Lock vault.
 
-A minimal AWS workload: VPC, Lambda, API Gateway, DynamoDB, S3. It ingests patient intake submissions over HTTPS. Think of it as a system you have just inherited from an engineering team and been asked to make audit-defensible.
+## Verify the evidence
 
-This repository ships **non-compliant on purpose**. Your job in the capstone is not to rewrite this app. Your job is to wrap it with the four CGE-P layers (Terraform GRC baseline, Rego policies, GitHub Actions evidence pipeline, OSCAL component) so the same workload becomes audit-defensible against HIPAA, SOC 2, and CMMC L2.
+Requires `aws`, `cosign` v2 and `jq`.
 
-## The deploy gate
-
-If you cannot deploy this starter, you cannot pass the capstone. Real GRC engineers inherit working systems. Step zero is making the system run.
+**Vault access for graders.** The vault is private. Send me the IAM principal ARN you'll verify from. I add it to `evidence_readers` in [terraform/variables.tf](terraform/variables.tf) through a PR, and the pipeline grants read-only access: `GetObject`, `GetObjectVersion`, `GetObjectRetention` and `ListBucket` on the vault, plus `kms:Decrypt` through S3 on the audit key. Your own IAM policy also needs to allow those actions on `arn:aws:s3:::acme-health-intake-evidence-fcc40870` and `arn:aws:kms:us-east-1:697020387897:key/fe81b92d-7b15-451f-a674-230e60ac5613`. Then run the script with `--profile <yours>`.
 
 ```bash
-git clone https://github.com/GRCEngClub/cgep-app-starter
-cd cgep-app-starter
-
-# Confirm you're authenticated to the right account:
-make creds AWS_PROFILE=<your-sandbox-profile>
-
-make deploy AWS_PROFILE=<your-sandbox-profile>
-make test    AWS_PROFILE=<your-sandbox-profile>
+scripts/verify-evidence.sh latest            # most recent run on main
+scripts/verify-evidence.sh <run_id>-<attempt> # a specific run
 ```
 
-> **AWS SSO note:** if your profile is SSO-based, Terraform's AWS provider can fail to read it directly with `failed to find SSO session section`. The Makefile's `eval $(aws configure export-credentials)` pattern handles this. If you're running `terraform` commands by hand, do the same export first.
+Three checks, all must pass:
 
-Expected output of `make test`:
+| Check | How |
+|---|---|
+| Integrity | SHA-256 of the bundle is recomputed and compared with the stored `.sha256` |
+| Authenticity | `cosign verify-blob` against the public Sigstore/Rekor log, requiring the signer `…/cgep-app-starter/.github/workflows/grc-gate.yml@refs/heads/main` |
+| Preservation | `s3api get-object-retention` shows Object Lock retention still in force |
 
-```json
-{
-    "submission_id": "f1e3...",
-    "status": "received"
-}
+Expected output ends with `CHAIN INTACT for run …`, followed by the bundle's manifest (commit, framework and step outcomes).
+
+The same bundle, `.sig.bundle` and `receipt.json` are attached to each `main` run under *Artifacts* for 90 days, so the signature and hash can be checked without AWS access.
+
+## Verify the gate
+
+```bash
+opa test ./policies                                   # 25/25
+scripts/policy-gate.sh <plan.json>                    # conftest, all hipaa.* namespaces
+scripts/validate-oscal.sh                             # trestle validate + profile resolution
 ```
 
-When you're done exploring: `make destroy`.
-
-## What you build on top
-
-Fork the repo into your own `cgep-capstone` and add:
-
-1. **Layer 1 — GRC baseline (Terraform).** KMS keys, an S3 evidence vault with Object Lock, a CloudTrail trail. Bring this starter's data stores under your CMK.
-2. **Layer 2 — OPA policy suite (Rego).** Five or more policies that catch the named gaps in [GAPS.md](GAPS.md). Each policy maps to at least one control from the framework you choose.
-3. **Layer 3 — GitHub Actions pipeline.** Plan → Conftest gate → apply → Cosign sign → upload to vault.
-4. **Layer 4 — OSCAL component.** A `component-definition.json` describing how your governed system implements its controls.
-
-Full brief: `docs/labs/07_01_capstone_brief.md` in the course content repo.
-
-## Framework mapping is required
-
-Your capstone must declare a primary framework: **HIPAA Security Rule**, **SOC 2 Trust Services Criteria**, or **CMMC Level 2**. Every policy carries at least one control ID from your chosen framework. Your OSCAL component's `control-implementations` reference your framework's catalog.
-
-A starter mapping is in [FRAMEWORKS.md](FRAMEWORKS.md). It is not the only valid mapping. You're expected to defend yours.
-
-## Cost
-
-Roughly $0 if destroyed within an hour. Lambda + API Gateway + DynamoDB + S3 are all pay-per-use, and an empty deployment generates no traffic. CloudTrail (which you add) costs cents.
+- PR **#3** passed the gate and merged.
+- PR **#4** re-introduces GAP-07 (`dynamodb:*`), fails `hipaa.iam_least_privilege` (HIPAA 164.312(a)(1)), and is blocked from merging by branch protection.
 
 ## Layout
 
 ```
-cgep-app-starter/
-├── README.md            # this file
-├── WORKLOAD.md          # what the API does
-├── GAPS.md              # the named flaws your policies must catch
-├── FRAMEWORKS.md        # HIPAA / SOC 2 / CMMC mapping primer
-├── Makefile             # make deploy | test | destroy
-├── terraform/
-│   ├── main.tf
-│   ├── variables.tf
-│   ├── outputs.tf
-│   └── lambda/handler.py
-└── test/
-    └── intake.sh
+terraform/      workload + HIPAA baseline (KMS, vault, CloudTrail, gap overrides), S3 backend
+bootstrap/      state bucket + plan/apply OIDC roles (applied once, by hand)
+policies/       hipaa.* Rego policies, lib/ helpers, tests/
+oscal/          catalog (HIPAA subset), profile, component definition
+scripts/        policy-gate.sh, validate-oscal.sh, verify-evidence.sh
+.github/workflows/grc-gate.yml   Plan, Policy check, Apply, Sign, Upload
 ```
 
-## License
-
-MIT. Fork freely. Submissions remain learners' own work.
+Starter docs: [WORKLOAD.md](WORKLOAD.md), [GAPS.md](GAPS.md), [FRAMEWORKS.md](FRAMEWORKS.md). Infrastructure changes go through the pipeline; `make deploy` is for the original starter only.
