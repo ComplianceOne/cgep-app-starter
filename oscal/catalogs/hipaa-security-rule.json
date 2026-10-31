@@ -1,0 +1,217 @@
+{
+  "catalog": {
+    "uuid": "46906d59-a9a5-4930-8c65-bb57f7c00c96",
+    "metadata": {
+      "title": "HIPAA Security Rule (45 CFR 164 Subpart C) - subset cited by the Acme Health Patient Intake API",
+      "last-modified": "2026-10-31T21:13:30+00:00",
+      "version": "1.0.0",
+      "oscal-version": "1.2.1",
+      "remarks": "NIST publishes no OSCAL catalog for the HIPAA Security Rule, and SP 800-66 Rev. 2 is guidance, not an OSCAL catalog. This catalog is authored for this system: it contains only the Security Rule standards and implementation specifications the component definition claims, with the regulatory text of each. SP 800-66r2 is linked as the implementation guidance used to interpret them. It is not a complete HIPAA catalog.",
+      "links": [
+        {
+          "href": "https://doi.org/10.6028/NIST.SP.800-66r2",
+          "rel": "reference",
+          "text": "NIST SP 800-66 Rev. 2, Implementing the HIPAA Security Rule: A Cybersecurity Resource Guide"
+        }
+      ]
+    },
+    "groups": [
+      {
+        "id": "admin",
+        "class": "safeguard",
+        "title": "Administrative safeguards (45 CFR 164.308)",
+        "controls": [
+          {
+            "id": "hipaa-164.308-a-7",
+            "class": "hipaa-standard",
+            "title": "Contingency plan",
+            "props": [
+              {
+                "name": "label",
+                "value": "164.308(a)(7)"
+              }
+            ],
+            "links": [
+              {
+                "href": "https://www.ecfr.gov/current/title-45/subtitle-A/subchapter-C/part-164/subpart-C/section-164.308",
+                "rel": "reference",
+                "text": "45 CFR 164.308(a)(7) (eCFR)"
+              }
+            ],
+            "parts": [
+              {
+                "id": "hipaa-164.308-a-7_smt",
+                "name": "statement",
+                "prose": "Establish (and implement as needed) policies and procedures for responding to an emergency or other occurrence (for example, fire, vandalism, system failure, and natural disaster) that damages systems that contain electronic protected health information. Implementation specifications include a data backup plan: establish and implement procedures to create and retrieve exact copies of electronic protected health information."
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "technical",
+        "class": "safeguard",
+        "title": "Technical safeguards (45 CFR 164.312)",
+        "controls": [
+          {
+            "id": "hipaa-164.312-a-1",
+            "class": "hipaa-standard",
+            "title": "Access control",
+            "props": [
+              {
+                "name": "label",
+                "value": "164.312(a)(1)"
+              }
+            ],
+            "links": [
+              {
+                "href": "https://www.ecfr.gov/current/title-45/subtitle-A/subchapter-C/part-164/subpart-C/section-164.312",
+                "rel": "reference",
+                "text": "45 CFR 164.312(a)(1) (eCFR)"
+              }
+            ],
+            "parts": [
+              {
+                "id": "hipaa-164.312-a-1_smt",
+                "name": "statement",
+                "prose": "Implement technical policies and procedures for electronic information systems that maintain electronic protected health information to allow access only to those persons or software programs that have been granted access rights as specified in 164.308(a)(4)."
+              }
+            ]
+          },
+          {
+            "id": "hipaa-164.312-a-2-iv",
+            "class": "hipaa-standard",
+            "title": "Encryption and decryption (Addressable)",
+            "props": [
+              {
+                "name": "label",
+                "value": "164.312(a)(2)(iv)"
+              }
+            ],
+            "links": [
+              {
+                "href": "https://www.ecfr.gov/current/title-45/subtitle-A/subchapter-C/part-164/subpart-C/section-164.312",
+                "rel": "reference",
+                "text": "45 CFR 164.312(a)(2)(iv) (eCFR)"
+              }
+            ],
+            "parts": [
+              {
+                "id": "hipaa-164.312-a-2-iv_smt",
+                "name": "statement",
+                "prose": "Implement a mechanism to encrypt and decrypt electronic protected health information."
+              }
+            ]
+          },
+          {
+            "id": "hipaa-164.312-b",
+            "class": "hipaa-standard",
+            "title": "Audit controls",
+            "props": [
+              {
+                "name": "label",
+                "value": "164.312(b)"
+              }
+            ],
+            "links": [
+              {
+                "href": "https://www.ecfr.gov/current/title-45/subtitle-A/subchapter-C/part-164/subpart-C/section-164.312",
+                "rel": "reference",
+                "text": "45 CFR 164.312(b) (eCFR)"
+              }
+            ],
+            "parts": [
+              {
+                "id": "hipaa-164.312-b_smt",
+                "name": "statement",
+                "prose": "Implement hardware, software, and/or procedural mechanisms that record and examine activity in information systems that contain or use electronic protected health information."
+              }
+            ]
+          },
+          {
+            "id": "hipaa-164.312-c-1",
+            "class": "hipaa-standard",
+            "title": "Integrity",
+            "props": [
+              {
+                "name": "label",
+                "value": "164.312(c)(1)"
+              }
+            ],
+            "links": [
+              {
+                "href": "https://www.ecfr.gov/current/title-45/subtitle-A/subchapter-C/part-164/subpart-C/section-164.312",
+                "rel": "reference",
+                "text": "45 CFR 164.312(c)(1) (eCFR)"
+              }
+            ],
+            "parts": [
+              {
+                "id": "hipaa-164.312-c-1_smt",
+                "name": "statement",
+                "prose": "Implement policies and procedures to protect electronic protected health information from improper alteration or destruction."
+              }
+            ]
+          },
+          {
+            "id": "hipaa-164.312-e-1",
+            "class": "hipaa-standard",
+            "title": "Transmission security",
+            "props": [
+              {
+                "name": "label",
+                "value": "164.312(e)(1)"
+              }
+            ],
+            "links": [
+              {
+                "href": "https://www.ecfr.gov/current/title-45/subtitle-A/subchapter-C/part-164/subpart-C/section-164.312",
+                "rel": "reference",
+                "text": "45 CFR 164.312(e)(1) (eCFR)"
+              }
+            ],
+            "parts": [
+              {
+                "id": "hipaa-164.312-e-1_smt",
+                "name": "statement",
+                "prose": "Implement technical security measures to guard against unauthorized access to electronic protected health information that is being transmitted over an electronic communications network."
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "documentation",
+        "class": "safeguard",
+        "title": "Policies, procedures and documentation (45 CFR 164.316)",
+        "controls": [
+          {
+            "id": "hipaa-164.316-b-2-i",
+            "class": "hipaa-standard",
+            "title": "Time limit (Required)",
+            "props": [
+              {
+                "name": "label",
+                "value": "164.316(b)(2)(i)"
+              }
+            ],
+            "links": [
+              {
+                "href": "https://www.ecfr.gov/current/title-45/subtitle-A/subchapter-C/part-164/subpart-C/section-164.316",
+                "rel": "reference",
+                "text": "45 CFR 164.316(b)(2)(i) (eCFR)"
+              }
+            ],
+            "parts": [
+              {
+                "id": "hipaa-164.316-b-2-i_smt",
+                "name": "statement",
+                "prose": "Retain the documentation required by paragraph (b)(1) of this section for 6 years from the date of its creation or the date when it last was in effect, whichever is later."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

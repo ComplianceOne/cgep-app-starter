@@ -1,0 +1,505 @@
+{
+  "component-definition": {
+    "uuid": "2a540962-9a05-40f5-baa1-76767cec558c",
+    "metadata": {
+      "title": "Acme Health Patient Intake API - governed component definition",
+      "last-modified": "2026-10-31T21:13:30+00:00",
+      "version": "1.0.0",
+      "oscal-version": "1.2.1",
+      "roles": [
+        {
+          "id": "maintainer",
+          "title": "Component maintainer"
+        }
+      ],
+      "parties": [
+        {
+          "uuid": "9d8b34af-dc70-4520-9d27-93d5d2ff4541",
+          "type": "organization",
+          "name": "Acme Health"
+        }
+      ],
+      "responsible-parties": [
+        {
+          "role-id": "maintainer",
+          "party-uuids": [
+            "9d8b34af-dc70-4520-9d27-93d5d2ff4541"
+          ]
+        }
+      ],
+      "remarks": "Primary framework: HIPAA Security Rule (45 CFR 164 Subpart C)."
+    },
+    "components": [
+      {
+        "uuid": "387c2270-2484-4351-95ba-6c472b7a27f9",
+        "type": "software",
+        "title": "Acme Health Patient Intake API",
+        "description": "The cgep-app-starter workload (API Gateway HTTP API -> Lambda -> DynamoDB + S3) with the HIPAA baseline wrapped around it: customer-managed KMS encryption, TLS-only bucket policy, versioning, Lambda in the starter VPC behind gateway endpoints, least-privilege IAM, and API access logging. Deployed to AWS us-east-1 from terraform/.",
+        "props": [
+          {
+            "name": "terraform-root",
+            "value": "terraform/",
+            "ns": "https://grc.acme-health.example/ns/oscal"
+          },
+          {
+            "name": "aws-region",
+            "value": "us-east-1",
+            "ns": "https://grc.acme-health.example/ns/oscal"
+          }
+        ],
+        "control-implementations": [
+          {
+            "uuid": "eb362b23-5f26-4353-8e83-7ef91b5487f0",
+            "source": "../catalogs/hipaa-security-rule.json",
+            "description": "HIPAA Security Rule controls implemented by the patient intake workload and its Terraform baseline, enforced at pull request by the hipaa.* Rego suite.",
+            "implemented-requirements": [
+              {
+                "uuid": "0285b6a4-fc7c-41b1-ba27-9c749bf4dc12",
+                "control-id": "hipaa-164.312-a-2-iv",
+                "description": "PHI at rest is encrypted under a customer-managed KMS key with annual automatic rotation. The uploads bucket uses SSE-KMS with that key (bucket key enabled) and the submissions table uses DynamoDB server-side encryption with the same key. The Lambda is granted kms:Decrypt/GenerateDataKey on that key only. Pull-request plans fail if any bucket or table is not under a customer-managed key.",
+                "props": [
+                  {
+                    "name": "implementation-status",
+                    "value": "implemented"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_kms_key.phi",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_s3_bucket_server_side_encryption_configuration.uploads",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_dynamodb_table.intake",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_iam_role_policy.lambda_kms",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "aws-arn",
+                    "value": "arn:aws:kms:us-east-1:697020387897:key/1f9f26d3-d88b-4af4-b0a4-138177a0a71b",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "aws-arn",
+                    "value": "arn:aws:s3:::acme-health-intake-uploads-fcc40870",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "aws-arn",
+                    "value": "arn:aws:dynamodb:us-east-1:697020387897:table/acme-health-intake-submissions-fcc40870",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "rego-policy",
+                    "value": "hipaa.s3_cmk_encryption",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "rego-policy",
+                    "value": "hipaa.dynamodb_cmk_encryption",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "gap-closed",
+                    "value": "GAP-01",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "gap-closed",
+                    "value": "GAP-02",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  }
+                ],
+                "links": [
+                  {
+                    "href": "s3://acme-health-intake-evidence-fcc40870/runs/41241777291-1/evidence-41241777291-1-65b9bdd09016.tar.gz",
+                    "rel": "evidence",
+                    "text": "Signed evidence bundle (terraform plan + apply, conftest + opa test results, manifest). Cosign keyless signature alongside as .sig.bundle; Object Lock GOVERNANCE retention."
+                  },
+                  {
+                    "href": "https://github.com/ComplianceOne/cgep-app-starter/actions/runs/41241777291",
+                    "rel": "related",
+                    "text": "grc-gate workflow run that produced the bundle"
+                  }
+                ]
+              },
+              {
+                "uuid": "cd98cdce-1a9e-424e-af38-fc25ff414883",
+                "control-id": "hipaa-164.312-e-1",
+                "description": "PHI in transit is protected on both legs of the workload. The uploads bucket policy denies any request where aws:SecureTransport is false. The Lambda runs in the starter VPC's private subnets with no internet route; it reaches DynamoDB and S3 only through gateway VPC endpoints whose policies allow only PutItem on the intake table and PutObject on the uploads bucket, and its security group allows HTTPS egress to those endpoints only. The API Gateway HTTP API endpoint is HTTPS-only.",
+                "props": [
+                  {
+                    "name": "implementation-status",
+                    "value": "implemented"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_s3_bucket_policy.uploads_tls_only",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "data.aws_iam_policy_document.uploads_tls_only",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_lambda_function.intake",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_vpc_endpoint.dynamodb",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_vpc_endpoint.s3",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_security_group.lambda",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_route_table.private",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "aws-arn",
+                    "value": "arn:aws:s3:::acme-health-intake-uploads-fcc40870",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "aws-arn",
+                    "value": "arn:aws:lambda:us-east-1:697020387897:function:acme-health-intake-handler-fcc40870",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "rego-policy",
+                    "value": "hipaa.s3_tls_only",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "rego-policy",
+                    "value": "hipaa.lambda_in_vpc",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "gap-closed",
+                    "value": "GAP-03",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "gap-closed",
+                    "value": "GAP-05",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  }
+                ],
+                "links": [
+                  {
+                    "href": "s3://acme-health-intake-evidence-fcc40870/runs/41241777291-1/evidence-41241777291-1-65b9bdd09016.tar.gz",
+                    "rel": "evidence",
+                    "text": "Signed evidence bundle (terraform plan + apply, conftest + opa test results, manifest). Cosign keyless signature alongside as .sig.bundle; Object Lock GOVERNANCE retention."
+                  },
+                  {
+                    "href": "https://github.com/ComplianceOne/cgep-app-starter/actions/runs/41241777291",
+                    "rel": "related",
+                    "text": "grc-gate workflow run that produced the bundle"
+                  }
+                ]
+              },
+              {
+                "uuid": "dc59d2ab-45fc-4cc5-bc44-4bafce3da77e",
+                "control-id": "hipaa-164.312-a-1",
+                "description": "The workload's software access is least-privilege: the Lambda role is granted only dynamodb:PutItem on the intake table and s3:PutObject on uploads/* in the uploads bucket, the two calls the handler makes. Policies are authored as aws_iam_policy_document so their actions are reviewable at plan time; any wildcard action, or any policy the gate cannot read before apply, blocks the pull request. Pipeline roles carry an explicit deny on reading PHI from the uploads bucket and submissions table.",
+                "props": [
+                  {
+                    "name": "implementation-status",
+                    "value": "partial"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_iam_role_policy.lambda_inline",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "data.aws_iam_policy_document.lambda_inline",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_iam_role.lambda",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "rego-policy",
+                    "value": "hipaa.iam_least_privilege",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "gap-closed",
+                    "value": "GAP-07",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  }
+                ],
+                "links": [
+                  {
+                    "href": "s3://acme-health-intake-evidence-fcc40870/runs/41241777291-1/evidence-41241777291-1-65b9bdd09016.tar.gz",
+                    "rel": "evidence",
+                    "text": "Signed evidence bundle (terraform plan + apply, conftest + opa test results, manifest). Cosign keyless signature alongside as .sig.bundle; Object Lock GOVERNANCE retention."
+                  },
+                  {
+                    "href": "https://github.com/ComplianceOne/cgep-app-starter/actions/runs/41241777291",
+                    "rel": "related",
+                    "text": "grc-gate workflow run that produced the bundle"
+                  }
+                ],
+                "remarks": "Partial: covers software (service-to-service) access. Workforce access to PHI, unique user identification (164.312(a)(2)(i)) and API caller authentication are not implemented; the starter's POST /intake route has no authorizer."
+              },
+              {
+                "uuid": "5b20a033-9d09-4beb-8a06-778845a37283",
+                "control-id": "hipaa-164.312-b",
+                "description": "Activity in the PHI system is recorded. A multi-region CloudTrail trail with log file validation captures management events to a dedicated, versioned, TLS-only bucket encrypted with a separate audit KMS key. The API Gateway stage writes structured access logs (request id, source IP, route, status, latency) to a CloudWatch log group encrypted with the audit key and retained for 365 days.",
+                "props": [
+                  {
+                    "name": "implementation-status",
+                    "value": "implemented"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_cloudtrail.main",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_s3_bucket.cloudtrail",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_kms_key.audit",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_apigatewayv2_stage.default",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_cloudwatch_log_group.api_access",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "aws-arn",
+                    "value": "arn:aws:cloudtrail:us-east-1:697020387897:trail/acme-health-intake-trail-fcc40870",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "aws-arn",
+                    "value": "arn:aws:kms:us-east-1:697020387897:key/fe81b92d-7b15-451f-a674-230e60ac5613",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "rego-policy",
+                    "value": "hipaa.api_access_logging",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "gap-closed",
+                    "value": "GAP-08",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  }
+                ],
+                "links": [
+                  {
+                    "href": "s3://acme-health-intake-evidence-fcc40870/runs/41241777291-1/evidence-41241777291-1-65b9bdd09016.tar.gz",
+                    "rel": "evidence",
+                    "text": "Signed evidence bundle (terraform plan + apply, conftest + opa test results, manifest). Cosign keyless signature alongside as .sig.bundle; Object Lock GOVERNANCE retention."
+                  },
+                  {
+                    "href": "https://github.com/ComplianceOne/cgep-app-starter/actions/runs/41241777291",
+                    "rel": "related",
+                    "text": "grc-gate workflow run that produced the bundle"
+                  }
+                ],
+                "remarks": "Records are captured; a scheduled review procedure for them (164.308(a)(1)(ii)(D)) is not implemented and is not claimed."
+              },
+              {
+                "uuid": "c4969a0e-f923-4384-a9c3-524d07bd6e54",
+                "control-id": "hipaa-164.308-a-7",
+                "description": "Versioning is enabled on the uploads bucket, so overwritten or deleted PHI objects can be retrieved as exact prior copies. Pull-request plans fail if any bucket lacks versioning.",
+                "props": [
+                  {
+                    "name": "implementation-status",
+                    "value": "partial"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_s3_bucket_versioning.uploads",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "aws-arn",
+                    "value": "arn:aws:s3:::acme-health-intake-uploads-fcc40870",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "rego-policy",
+                    "value": "hipaa.s3_versioning",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "gap-closed",
+                    "value": "GAP-04",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  }
+                ],
+                "links": [
+                  {
+                    "href": "s3://acme-health-intake-evidence-fcc40870/runs/41241777291-1/evidence-41241777291-1-65b9bdd09016.tar.gz",
+                    "rel": "evidence",
+                    "text": "Signed evidence bundle (terraform plan + apply, conftest + opa test results, manifest). Cosign keyless signature alongside as .sig.bundle; Object Lock GOVERNANCE retention."
+                  },
+                  {
+                    "href": "https://github.com/ComplianceOne/cgep-app-starter/actions/runs/41241777291",
+                    "rel": "related",
+                    "text": "grc-gate workflow run that produced the bundle"
+                  }
+                ],
+                "remarks": "Partial: addresses the data backup plan specification for S3 only. DynamoDB point-in-time recovery, a disaster recovery plan and an emergency mode operation plan are not implemented."
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "uuid": "cdff5794-41fc-4c85-8ae3-772637698141",
+        "type": "service",
+        "title": "GRC evidence pipeline",
+        "description": "GitHub Actions workflow grc-gate.yml: Plan, Policy check (Conftest, fails closed), Apply (main only), Sign (Cosign keyless), Upload (S3 Object Lock vault). Pull requests use a read-only OIDC role; main uses the apply role. Both roles are pinned to this repository by GitHub immutable subject claims.",
+        "props": [
+          {
+            "name": "workflow",
+            "value": ".github/workflows/grc-gate.yml",
+            "ns": "https://grc.acme-health.example/ns/oscal"
+          },
+          {
+            "name": "terraform-root",
+            "value": "bootstrap/",
+            "ns": "https://grc.acme-health.example/ns/oscal"
+          }
+        ],
+        "control-implementations": [
+          {
+            "uuid": "f653ed24-4fb7-4bfe-8f21-7fafe61261b6",
+            "source": "../catalogs/hipaa-security-rule.json",
+            "description": "HIPAA Security Rule controls implemented by the evidence pipeline and vault.",
+            "implemented-requirements": [
+              {
+                "uuid": "8ce0fe8d-4b16-4e27-b3ba-6254e99189dc",
+                "control-id": "hipaa-164.312-c-1",
+                "description": "The record of how the PHI system is configured and changed is protected from improper alteration. Every push to main produces an evidence bundle (plan, apply, policy results, manifest with per-file SHA-256), signed with Cosign keyless signing via GitHub OIDC and recorded in the public Rekor transparency log, then written to an S3 Object Lock bucket (versioned, KMS-encrypted). Pipeline roles are explicitly denied s3:BypassGovernanceRetention, retention changes and object deletion in the vault. CloudTrail log file validation provides digest-based integrity for audit logs.",
+                "props": [
+                  {
+                    "name": "implementation-status",
+                    "value": "implemented"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_s3_bucket.evidence",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_s3_bucket_object_lock_configuration.evidence",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_s3_bucket_versioning.evidence",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_cloudtrail.main",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "aws-arn",
+                    "value": "arn:aws:s3:::acme-health-intake-evidence-fcc40870",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "aws-arn",
+                    "value": "arn:aws:cloudtrail:us-east-1:697020387897:trail/acme-health-intake-trail-fcc40870",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  }
+                ],
+                "links": [
+                  {
+                    "href": "s3://acme-health-intake-evidence-fcc40870/runs/41241777291-1/evidence-41241777291-1-65b9bdd09016.tar.gz",
+                    "rel": "evidence",
+                    "text": "Signed evidence bundle (terraform plan + apply, conftest + opa test results, manifest). Cosign keyless signature alongside as .sig.bundle; Object Lock GOVERNANCE retention."
+                  },
+                  {
+                    "href": "https://github.com/ComplianceOne/cgep-app-starter/actions/runs/41241777291",
+                    "rel": "related",
+                    "text": "grc-gate workflow run that produced the bundle"
+                  }
+                ],
+                "remarks": "Implemented in .github/workflows/grc-gate.yml (steps 4 Sign and 5 Upload) and bootstrap/main.tf (guardrails). Verify any run with scripts/verify-evidence.sh."
+              },
+              {
+                "uuid": "66a607ae-9dc3-426f-ae1f-c5dd0ee4c0ef",
+                "control-id": "hipaa-164.316-b-2-i",
+                "description": "Evidence bundles are retained under S3 Object Lock in GOVERNANCE mode with a 365-day default retention, applied automatically on upload.",
+                "props": [
+                  {
+                    "name": "implementation-status",
+                    "value": "partial"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_s3_bucket_object_lock_configuration.evidence",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "aws-arn",
+                    "value": "arn:aws:s3:::acme-health-intake-evidence-fcc40870",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  }
+                ],
+                "links": [
+                  {
+                    "href": "s3://acme-health-intake-evidence-fcc40870/runs/41241777291-1/evidence-41241777291-1-65b9bdd09016.tar.gz",
+                    "rel": "evidence",
+                    "text": "Signed evidence bundle (terraform plan + apply, conftest + opa test results, manifest). Cosign keyless signature alongside as .sig.bundle; Object Lock GOVERNANCE retention."
+                  },
+                  {
+                    "href": "https://github.com/ComplianceOne/cgep-app-starter/actions/runs/41241777291",
+                    "rel": "related",
+                    "text": "grc-gate workflow run that produced the bundle"
+                  }
+                ],
+                "remarks": "Partial by design: 365 days, not 6 years, and GOVERNANCE rather than COMPLIANCE mode, so the sandbox can be torn down after grading. Production would use COMPLIANCE mode with 6-year retention."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
