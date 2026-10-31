@@ -38,10 +38,14 @@ variable "aws_region" {
   default = "us-east-1"
 }
 
-variable "github_repo" {
+# The repo uses GitHub's immutable subject claims: owner and repo are
+# pinned by numeric ID, so a renamed or re-created repo with the same
+# name cannot inherit these roles. Read it with:
+#   gh api repos/<owner>/<repo>/actions/oidc/customization/sub
+variable "github_sub_prefix" {
   type        = string
-  description = "owner/name of the repo allowed to assume the pipeline roles."
-  default     = "ComplianceOne/cgep-app-starter"
+  description = "OIDC sub claim prefix of the repo allowed to assume the pipeline roles."
+  default     = "repo:ComplianceOne@193837465/cgep-app-starter@1441223577"
 }
 
 data "aws_caller_identity" "current" {}
@@ -183,7 +187,7 @@ data "aws_iam_policy_document" "plan_trust" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repo}:pull_request"]
+      values   = ["${var.github_sub_prefix}:pull_request"]
     }
   }
 }
@@ -251,7 +255,7 @@ data "aws_iam_policy_document" "apply_trust" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repo}:ref:refs/heads/main"]
+      values   = ["${var.github_sub_prefix}:ref:refs/heads/main"]
     }
   }
 }
