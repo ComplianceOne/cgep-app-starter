@@ -1,3 +1,6 @@
+# Tests for HIPAA 164.308(a)(7) Contingency plan / data backup — GAP-04 (S3 versioning).
+# Compliant: versioning Enabled. Non-compliant: missing, Suspended.
+
 package hipaa.s3_versioning_test
 
 import data.hipaa.s3_versioning

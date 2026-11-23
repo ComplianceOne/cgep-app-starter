@@ -1,3 +1,6 @@
+# Tests for HIPAA 164.312(e)(1) Transmission security — GAP-05 (Lambda inside the VPC).
+# Compliant: vpc_config with subnets and security groups. Non-compliant: no vpc_config, empty subnet list.
+
 package hipaa.lambda_in_vpc_test
 
 import data.hipaa.lambda_in_vpc

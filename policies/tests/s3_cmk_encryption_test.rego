@@ -1,3 +1,6 @@
+# Tests for HIPAA 164.312(a)(2)(iv) Encryption and decryption — GAP-01 (S3 under customer CMK).
+# Compliant: SSE-KMS with a customer key. Non-compliant: no SSE config, SSE-S3 (AES256), aws/s3 managed alias.
+
 package hipaa.s3_cmk_encryption_test
 
 import data.hipaa.s3_cmk_encryption
