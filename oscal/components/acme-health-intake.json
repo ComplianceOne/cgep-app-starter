@@ -3,8 +3,8 @@
     "uuid": "2a540962-9a05-40f5-baa1-76767cec558c",
     "metadata": {
       "title": "Acme Health Patient Intake API - governed component definition",
-      "last-modified": "2026-10-31T21:13:30+00:00",
-      "version": "1.0.0",
+      "last-modified": "2026-11-23T03:24:31+00:00",
+      "version": "1.1.0",
       "oscal-version": "1.2.1",
       "roles": [
         {
@@ -53,6 +53,50 @@
             "source": "../catalogs/hipaa-security-rule.json",
             "description": "HIPAA Security Rule controls implemented by the patient intake workload and its Terraform baseline, enforced at pull request by the hipaa.* Rego suite.",
             "implemented-requirements": [
+              {
+                "uuid": "104aff38-133c-4da6-9201-f27e4c4d5f78",
+                "control-id": "hipaa-164.308-a-1-ii-d",
+                "description": "Review of activity records is automated for the events that would weaken a HIPAA control. Six EventBridge rules match CloudTrail events and alert to a KMS-encrypted SNS topic: trail stopped or reconfigured, KMS key disabled or scheduled for deletion, workload bucket protections changed, workload or pipeline role permissions changed, any delete or retention call against the evidence vault, and any root-user activity. Configuration changes made by the gated pipeline role are expected and excluded; anything else is out-of-band and alerts. Each rule is tagged with the control it protects, and tests/detections/ checks every pattern against real EventBridge matching on every pull request (22 positive and negative cases).",
+                "props": [
+                  {
+                    "name": "implementation-status",
+                    "value": "partial"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_cloudwatch_event_rule.detection",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_cloudwatch_event_target.detection",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_sns_topic.security_alerts",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_cloudtrail.main",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  }
+                ],
+                "links": [
+                  {
+                    "href": "s3://acme-health-intake-evidence-fcc40870/runs/41241777291-1/evidence-41241777291-1-65b9bdd09016.tar.gz",
+                    "rel": "evidence",
+                    "text": "Signed evidence bundle (terraform plan + apply, conftest + opa test results, manifest). Cosign keyless signature alongside as .sig.bundle; Object Lock GOVERNANCE retention."
+                  },
+                  {
+                    "href": "https://github.com/ComplianceOne/cgep-app-starter/actions/runs/41241777291",
+                    "rel": "related",
+                    "text": "grc-gate workflow run that produced the bundle"
+                  }
+                ],
+                "remarks": "Partial: detection and alert routing are automated; a scheduled human review of the full logs and an alert triage runbook are not implemented."
+              },
               {
                 "uuid": "0285b6a4-fc7c-41b1-ba27-9c749bf4dc12",
                 "control-id": "hipaa-164.312-a-2-iv",
@@ -222,7 +266,7 @@
               {
                 "uuid": "dc59d2ab-45fc-4cc5-bc44-4bafce3da77e",
                 "control-id": "hipaa-164.312-a-1",
-                "description": "The workload's software access is least-privilege: the Lambda role is granted only dynamodb:PutItem on the intake table and s3:PutObject on uploads/* in the uploads bucket, the two calls the handler makes. Policies are authored as aws_iam_policy_document so their actions are reviewable at plan time; any wildcard action, or any policy the gate cannot read before apply, blocks the pull request. Pipeline roles carry an explicit deny on reading PHI from the uploads bucket and submissions table.",
+                "description": "The workload's software access is least-privilege: the Lambda role is granted only dynamodb:PutItem on the intake table and s3:PutObject on uploads/* in the uploads bucket, the two calls the handler makes. Policies are authored as aws_iam_policy_document so their actions are reviewable at plan time; any wildcard action, or any policy the gate cannot read before apply, blocks the pull request. Pipeline roles carry an explicit deny on reading PHI from the uploads bucket and submissions table. The uploads bucket blocks all public access explicitly, and the VPC's default security group allows no traffic, so nothing launched without an explicit group can reach the network.",
                 "props": [
                   {
                     "name": "implementation-status",
@@ -241,6 +285,16 @@
                   {
                     "name": "terraform-address",
                     "value": "aws_iam_role.lambda",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_s3_bucket_public_access_block.uploads",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_default_security_group.main",
                     "ns": "https://grc.acme-health.example/ns/oscal"
                   },
                   {
@@ -271,7 +325,7 @@
               {
                 "uuid": "5b20a033-9d09-4beb-8a06-778845a37283",
                 "control-id": "hipaa-164.312-b",
-                "description": "Activity in the PHI system is recorded. A multi-region CloudTrail trail with log file validation captures management events to a dedicated, versioned, TLS-only bucket encrypted with a separate audit KMS key. The API Gateway stage writes structured access logs (request id, source IP, route, status, latency) to a CloudWatch log group encrypted with the audit key and retained for 365 days.",
+                "description": "Activity in the PHI system is recorded. A multi-region CloudTrail trail with log file validation captures management events, plus S3 object-level data events on the PHI uploads bucket and the evidence vault, to a dedicated versioned, TLS-only bucket and to CloudWatch Logs, both encrypted with a separate audit KMS key. VPC flow logs record every accepted and rejected connection in the PHI network. The API Gateway stage writes structured access logs (request id, source IP, route, status, latency). All CloudWatch log groups are encrypted with the audit key and retained for 365 days.",
                 "props": [
                   {
                     "name": "implementation-status",
@@ -300,6 +354,21 @@
                   {
                     "name": "terraform-address",
                     "value": "aws_cloudwatch_log_group.api_access",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_cloudwatch_log_group.cloudtrail",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_flow_log.main",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_cloudwatch_log_group.vpc_flow",
                     "ns": "https://grc.acme-health.example/ns/oscal"
                   },
                   {
@@ -335,12 +404,12 @@
                     "text": "grc-gate workflow run that produced the bundle"
                   }
                 ],
-                "remarks": "Records are captured; a scheduled review procedure for them (164.308(a)(1)(ii)(D)) is not implemented and is not claimed."
+                "remarks": "Review of these records is automated for specific high-risk events (see 164.308(a)(1)(ii)(D))."
               },
               {
                 "uuid": "c4969a0e-f923-4384-a9c3-524d07bd6e54",
                 "control-id": "hipaa-164.308-a-7",
-                "description": "Versioning is enabled on the uploads bucket, so overwritten or deleted PHI objects can be retrieved as exact prior copies. Pull-request plans fail if any bucket lacks versioning.",
+                "description": "Exact copies of PHI can be retrieved. Versioning on the uploads bucket keeps every prior object version, and DynamoDB point-in-time recovery lets the submissions table be restored to any second in the last 35 days. Pull-request plans fail if any bucket lacks versioning.",
                 "props": [
                   {
                     "name": "implementation-status",
@@ -349,6 +418,11 @@
                   {
                     "name": "terraform-address",
                     "value": "aws_s3_bucket_versioning.uploads",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_dynamodb_table.intake",
                     "ns": "https://grc.acme-health.example/ns/oscal"
                   },
                   {
@@ -379,7 +453,7 @@
                     "text": "grc-gate workflow run that produced the bundle"
                   }
                 ],
-                "remarks": "Partial: addresses the data backup plan specification for S3 only. DynamoDB point-in-time recovery, a disaster recovery plan and an emergency mode operation plan are not implemented."
+                "remarks": "Partial: meets the data backup plan specification (164.308(a)(7)(ii)(A)) for both PHI stores. A disaster recovery plan, emergency mode operation plan and restore testing are not implemented."
               }
             ]
           }
@@ -411,7 +485,7 @@
               {
                 "uuid": "8ce0fe8d-4b16-4e27-b3ba-6254e99189dc",
                 "control-id": "hipaa-164.312-c-1",
-                "description": "The record of how the PHI system is configured and changed is protected from improper alteration. Every push to main produces an evidence bundle (plan, apply, policy results, manifest with per-file SHA-256), signed with Cosign keyless signing via GitHub OIDC and recorded in the public Rekor transparency log, then written to an S3 Object Lock bucket (versioned, KMS-encrypted). Pipeline roles are explicitly denied s3:BypassGovernanceRetention, retention changes and object deletion in the vault. CloudTrail log file validation provides digest-based integrity for audit logs.",
+                "description": "The record of how the PHI system is configured and changed is protected from improper alteration. Every push to main produces an evidence bundle (plan, apply, policy results, manifest with per-file SHA-256), signed with Cosign keyless signing via GitHub OIDC and recorded in the public Rekor transparency log, then written to an S3 Object Lock bucket (versioned, KMS-encrypted). Pipeline roles are explicitly denied s3:BypassGovernanceRetention, retention changes and object deletion in the vault. CloudTrail log file validation provides digest-based integrity for audit logs. A daily scheduled run re-plans live infrastructure against main, files a signed bundle, and fails loudly on drift instead of silently reverting it. Any delete, retention or legal-hold call against the vault raises an alert (EventBridge rule evidence-deletion-attempt).",
                 "props": [
                   {
                     "name": "implementation-status",
@@ -435,6 +509,11 @@
                   {
                     "name": "terraform-address",
                     "value": "aws_cloudtrail.main",
+                    "ns": "https://grc.acme-health.example/ns/oscal"
+                  },
+                  {
+                    "name": "terraform-address",
+                    "value": "aws_cloudwatch_event_rule.detection",
                     "ns": "https://grc.acme-health.example/ns/oscal"
                   },
                   {

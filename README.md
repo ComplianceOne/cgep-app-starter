@@ -60,6 +60,8 @@ The same bundle, `.sig.bundle` and `receipt.json` are attached to each `main` ru
 
 ```bash
 opa test ./policies                                   # 25/25
+python3 -m unittest discover -s tests/detections -v   # 22 detection-rule cases vs real EventBridge
+scripts/gap-regression.py                             # each closed gap re-introduced -> blocked
 scripts/policy-gate.sh <plan.json>                    # conftest, all hipaa.* namespaces
 scripts/validate-oscal.sh                             # trestle validate + profile resolution
 ```

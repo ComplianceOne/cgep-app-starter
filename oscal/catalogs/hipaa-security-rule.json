@@ -3,8 +3,8 @@
     "uuid": "46906d59-a9a5-4930-8c65-bb57f7c00c96",
     "metadata": {
       "title": "HIPAA Security Rule (45 CFR 164 Subpart C) - subset cited by the Acme Health Patient Intake API",
-      "last-modified": "2026-10-31T21:13:30+00:00",
-      "version": "1.0.0",
+      "last-modified": "2026-11-23T03:24:31+00:00",
+      "version": "1.1.0",
       "oscal-version": "1.2.1",
       "remarks": "NIST publishes no OSCAL catalog for the HIPAA Security Rule, and SP 800-66 Rev. 2 is guidance, not an OSCAL catalog. This catalog is authored for this system: it contains only the Security Rule standards and implementation specifications the component definition claims, with the regulatory text of each. SP 800-66r2 is linked as the implementation guidance used to interpret them. It is not a complete HIPAA catalog.",
       "links": [
@@ -21,6 +21,31 @@
         "class": "safeguard",
         "title": "Administrative safeguards (45 CFR 164.308)",
         "controls": [
+          {
+            "id": "hipaa-164.308-a-1-ii-d",
+            "class": "hipaa-standard",
+            "title": "Information system activity review (Required)",
+            "props": [
+              {
+                "name": "label",
+                "value": "164.308(a)(1)(ii)(D)"
+              }
+            ],
+            "links": [
+              {
+                "href": "https://www.ecfr.gov/current/title-45/subtitle-A/subchapter-C/part-164/subpart-C/section-164.308",
+                "rel": "reference",
+                "text": "45 CFR 164.308(a)(1)(ii)(D) (eCFR)"
+              }
+            ],
+            "parts": [
+              {
+                "id": "hipaa-164.308-a-1-ii-d_smt",
+                "name": "statement",
+                "prose": "Implement procedures to regularly review records of information system activity, such as audit logs, access reports, and security incident tracking reports."
+              }
+            ]
+          },
           {
             "id": "hipaa-164.308-a-7",
             "class": "hipaa-standard",

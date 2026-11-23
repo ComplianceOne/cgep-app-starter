@@ -6,14 +6,14 @@ The system is the unchanged starter workload (API Gateway, Lambda, DynamoDB, S3,
 
 | Layer | Where | What it does |
 |---|---|---|
-| 1. Terraform baseline | `terraform/`, `bootstrap/` | Customer-managed KMS keys, Object Lock evidence vault, CloudTrail, and overrides that close seven of the eight gaps |
-| 2. Policy suite | `policies/` | Seven Rego policies, one per gap, each citing a HIPAA section; 25 unit tests |
-| 3. Pipeline | `.github/workflows/grc-gate.yml` | Plan, Policy check, Apply, Sign, Upload. Pull requests are read-only; `main` applies and files signed evidence |
+| 1. Terraform baseline | `terraform/`, `bootstrap/` | Customer-managed KMS keys, Object Lock evidence vault, CloudTrail (with S3 data events), VPC flow logs, six EventBridge detection rules, and overrides that close seven of the eight gaps |
+| 2. Policy suite | `policies/`, `tests/`, `scripts/gap-regression.py` | Seven Rego policies, one per gap, each citing a HIPAA section; 25 policy unit tests, 22 detection-rule tests, and a gap-regression integration test |
+| 3. Pipeline | `.github/workflows/grc-gate.yml` | Plan, Policy check, Apply, Sign, Upload. Pull requests are read-only; `main` applies and files signed evidence; a daily scheduled run checks for drift |
 | 4. OSCAL | `oscal/` | Catalog, profile and component definition describing what was built, validated with trestle on every run |
 
 ## Design decisions
 
-**Close gaps in Terraform and enforce them in policy.** Each gap I address is fixed twice. The Terraform override fixes it today, and the Rego policy stops it coming back. A fix with no gate decays the first time someone refactors. A gate with no fix just blocks every PR. During development I re-introduced each closed gap into the hardened config, one at a time, against real state, and confirmed the gate blocked on exactly the matching policy and no other. PR #4 (`dynamodb:*` re-introduced) shows the same thing in the repo history: red, and blocked from merging.
+**Close gaps in Terraform and enforce them in policy.** Each gap I address is fixed twice. The Terraform override fixes it today, and the Rego policy stops it coming back. A fix with no gate decays the first time someone refactors. A gate with no fix just blocks every PR. During development I re-introduced each closed gap into the hardened config, one at a time, against real state, and confirmed the gate blocked on exactly the matching policy and no other. That check is committed as `scripts/gap-regression.py`, so it can be re-run rather than taken on trust. PR #4 (`dynamodb:*` re-introduced) shows the same thing in the repo history: red, and blocked from merging.
 
 **Policies read the plan's configuration, and fail closed when they can't see.** On a fresh plan, an IAM or bucket policy built with `jsonencode()` over ARNs that don't exist yet is a single unknown value. Conftest sees `null`, so the starter's original `dynamodb:*` is invisible. I rewrote every IAM and bucket policy as `aws_iam_policy_document`, whose actions and conditions stay visible as constants in the plan. That change produced no diff in AWS. The policies then treat any policy they cannot read as a violation. That's what lets the gate catch a reverted GAP-07 in an empty account as well as in mine.
 
@@ -28,6 +28,12 @@ The system is the unchanged starter workload (API Gateway, Lambda, DynamoDB, S3,
 **Evidence is signed by identity, not by a key I manage.** Cosign keyless signing binds each bundle to `grc-gate.yml@refs/heads/main` in this repo through a Fulcio certificate, and records it in the public Rekor log. There is no private key to rotate, leak or keep in a secret. `scripts/verify-evidence.sh` checks the signer identity exactly; any valid GitHub signature is not enough.
 
 **External verifiers get read access through the gate, too.** The vault is private. A grader or auditor is granted access by adding their principal to `evidence_readers`. That grants `GetObject`, `GetObjectVersion`, `GetObjectRetention` and `ListBucket` on the vault, and decryption through S3 on the audit key only; no write, delete or retention changes. Because the grant is a Terraform change, it goes through the policy gate and produces its own signed bundle. The record of who was given access to the evidence is itself evidence.
+
+**Detection that ignores the pipeline and catches everything else.** Six EventBridge rules (`monitoring.tf`) match CloudTrail events that would weaken a control and alert to a KMS-encrypted SNS topic: the trail stopped or reconfigured, a KMS key disabled or scheduled for deletion, protections changed on a workload bucket, permissions changed on a workload or pipeline role, any delete or retention call against the evidence vault, and any root-user activity. Each rule carries the HIPAA control it protects as a tag and in its alert text. Configuration changes made by `grc-pipeline-apply` are expected, because the gate already reviewed them, so those rules exclude it. Anything else is out-of-band by definition, and that is what an alert should mean. Tampering with the trail or the vault alerts no matter who does it. The patterns live in `terraform/detections/*.json`, and `tests/detections/` checks each one against real EventBridge matching (`aws events test-event-pattern`) on every pull request, with 22 cases that must or must not alert. That is how I found that `anything-but` silently skips IAM users, who carry no session issuer, and fixed it with an `$or`.
+
+**A daily run that reports drift instead of reverting it.** The workflow also runs on a schedule. It re-plans against live AWS; if anything changed outside Terraform, it still signs and files the evidence, then fails the run so GitHub alerts. It never applies on a schedule. Silently reverting an out-of-band change would destroy the evidence of it.
+
+**Scanner findings are fixed or justified where they live.** Checkov flagged 28 findings on the first pass. I fixed the ones that strengthen a control: VPC flow logs, CloudTrail to CloudWatch Logs plus S3 data events, DynamoDB point-in-time recovery, an explicit public-access block on uploads, a deny-all default security group, an explicit PHI key policy, and Lambda environment encryption. The rest carry an inline `#checkov:skip` with the reason next to the resource. Examples: reserved concurrency can't be set in an account whose limit is 10; a DLQ never fires for synchronous API Gateway invocations; the missing API authorizer is a real gap I'd rather show than hide.
 
 **Sign and Upload run on `main` even when Plan or Apply fails.** A failed apply is evidence too. Each bundle's `manifest.json` records the outcome of every step and a SHA-256 per file.
 
@@ -54,10 +60,11 @@ The system is the unchanged starter workload (API Gateway, Lambda, DynamoDB, S3,
 | GAP-07 `dynamodb:*` / `s3:*` | 164.312(a)(1) | `data.aws_iam_policy_document.lambda_inline` | `hipaa.iam_least_privilege` | Closed |
 | GAP-08 No API access logging | 164.312(b) | `access_log_settings` + `aws_cloudwatch_log_group.api_access` | `hipaa.api_access_logging` | Closed (logging and throttling; not WAF) |
 
-The OSCAL component claims seven HIPAA controls. Four are implemented: 164.312(a)(2)(iv), (b), (c)(1) and (e)(1). Three are partial, each with the reason stated in its remarks:
+The OSCAL component claims eight HIPAA controls. Four are implemented: 164.312(a)(2)(iv), (b), (c)(1) and (e)(1). Four are partial, each with the reason stated in its remarks:
 
 - **164.312(a)(1)**: covers service access only; the API has no caller authentication.
-- **164.308(a)(7)**: covers S3 versioning only; no DynamoDB point-in-time recovery and no DR plan.
+- **164.308(a)(7)**: the data backup specification is met for both PHI stores (S3 versioning, DynamoDB point-in-time recovery); there is no DR plan, emergency mode plan or restore testing.
+- **164.308(a)(1)(ii)(D)**: review is automated for six high-risk event types with alert routing; there is no scheduled human review of the full logs and no triage runbook.
 - **164.316(b)(2)(i)**: retention is 365 days, not the required 6 years.
 
 The policies apply to every bucket, table, function, IAM policy and stage in the plan, not only the starter's. The evidence vault and CloudTrail bucket are gated by the same rules. The bootstrap state bucket follows them too, but sits outside the gated plan.
@@ -87,13 +94,13 @@ The blocked path: PR #4 changes the Lambda policy to `dynamodb:*`. Run [`4124218
 
 1. **Authenticate API callers** (Cognito or an IAM/JWT authorizer on `POST /intake`). This is the largest real HIPAA gap left, and it is what keeps 164.312(a)(1) at partial.
 2. **Move the vault to a separate log-archive account** in COMPLIANCE mode with 6-year retention, which closes 164.316(b)(2)(i).
-3. **DynamoDB point-in-time recovery**, plus a policy requiring it, to finish 164.308(a)(7)'s backup specification.
-4. **Close GAP-06** (reserved concurrency, an encrypted SQS DLQ, X-Ray through an interface endpoint) as an availability control mapped to SOC 2 A1 / CC7.2.
-5. **Commit the gap regression harness** I used during development, and run it on a schedule against an empty account so the fresh-plan behaviour is checked continuously, not once.
+3. **An alert triage runbook and a weekly log review**, recorded as evidence, to finish 164.308(a)(1)(ii)(D).
+4. **Close GAP-06** (raise the account concurrency quota so reserved concurrency can be set, and add X-Ray through an interface endpoint) as an availability control mapped to SOC 2 A1 / CC7.2, plus Lambda code signing.
+5. **Run `scripts/gap-regression.py` on a schedule against an empty account**, so the fresh-plan behaviour is checked continuously, not once.
 
 ## What I didn't get to
 
 - **GAP-06.** None of reserved concurrency, a dead-letter queue or tracing maps to a HIPAA Security Rule section. `GAPS.md` cites only SOC 2 and CMMC for it. Closing it would be good engineering, but claiming it as a HIPAA control would be inaccurate, so it is left open and unclaimed.
 - **WAF on the API.** AWS WAF cannot attach to API Gateway HTTP APIs, only REST APIs, CloudFront and ALB. GAP-08 is closed for logging and throttling; WAF would need the API in front of CloudFront or rebuilt as a REST API.
-- **Activity review (164.308(a)(1)(ii)(D)).** CloudTrail and access logs capture activity, but no one reviews them on a schedule. It's a process, not code, and I haven't claimed it.
-- **AWS Config / Security Hub.** I built these in Lab 5.2 but left them out here to keep the scope on what the brief grades.
+- **Human activity review (164.308(a)(1)(ii)(D)).** Detection and alert routing are automated, but no one reviews the full logs on a schedule and there is no triage runbook. That part is a process, not code, and it is why the control is partial.
+- **AWS Config / Security Hub.** I built these in Lab 5.2. Here I chose event-driven EventBridge rules instead: they alert on the specific changes that matter for these controls, and each pattern is tested.
