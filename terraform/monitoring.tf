@@ -92,7 +92,9 @@ resource "aws_cloudwatch_event_rule" "detection" {
   description   = "[HIPAA ${each.value.control}] ${each.value.description}"
   event_pattern = file("${path.module}/detections/${each.key}.json")
 
-  tags = { hipaa_control = each.value.control }
+  # AWS tag values cannot contain parentheses, so tag with the OSCAL
+  # control ID form: 164.312(a)(2)(iv) -> hipaa-164.312-a-2-iv.
+  tags = { hipaa_control = "hipaa-${trim(replace(lower(each.value.control), "/[()]+/", "-"), "-")}" }
 }
 
 resource "aws_cloudwatch_event_target" "detection" {
