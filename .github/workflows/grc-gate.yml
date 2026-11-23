@@ -1,9 +1,9 @@
 # .github/workflows/grc-gate.yml
 #
 # One workflow, five named steps, in order:
-#   1. Plan          terraform plan (every run)
+#   1. Plan          terraform plan (every run; on the daily schedule, drift check)
 #   2. Policy check  HIPAA Rego suite via Conftest + OSCAL validation; fails closed (every run)
-#   3. Apply         main only, and only if 1 and 2 passed
+#   3. Apply         push to main only, and only if 1 and 2 passed (never on schedule)
 #   4. Sign          main only: Cosign keyless (GitHub OIDC -> Fulcio -> Rekor)
 #   5. Upload        main only: signed bundle into the Object Lock vault
 #
@@ -18,6 +18,10 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  # Daily: re-check live infrastructure against main (drift) and file a
+  # signed evidence bundle even when nothing changed.
+  schedule:
+    - cron: "17 6 * * *"
 
 permissions:
   id-token: write # AWS OIDC + Cosign keyless signing
@@ -33,6 +37,7 @@ env:
   TF_DIR: terraform
   EVIDENCE_DIR: evidence
   IS_MAIN: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+  IS_SCHEDULED: ${{ github.event_name == 'schedule' }}
 
 jobs:
   grc-gate:
@@ -85,8 +90,17 @@ jobs:
           terraform validate
           # The read-only PR role cannot write the state lock file.
           LOCK=$([[ "$IS_MAIN" == "true" ]] && echo true || echo false)
-          terraform plan -input=false -no-color -lock="$LOCK" -out=tfplan | tee "$GITHUB_WORKSPACE/$EVIDENCE_DIR/plan.txt"
+          # -detailed-exitcode: 0 = no changes, 1 = error, 2 = changes.
+          # On the daily schedule, changes mean live infra drifted from main.
+          set +e
+          terraform plan -input=false -no-color -lock="$LOCK" -detailed-exitcode -out=tfplan | tee "$GITHUB_WORKSPACE/$EVIDENCE_DIR/plan.txt"
+          CODE=${PIPESTATUS[0]}
+          set -e
+          [[ $CODE -ne 1 ]] || exit 1
           terraform show -json tfplan > "$GITHUB_WORKSPACE/$EVIDENCE_DIR/plan.json"
+          DRIFT=$([[ $CODE -eq 2 && "$IS_SCHEDULED" == "true" ]] && echo true || echo false)
+          echo "$DRIFT" > "$GITHUB_WORKSPACE/$EVIDENCE_DIR/drift.txt"
+          echo "drift=$DRIFT" >> "$GITHUB_OUTPUT"
 
       - name: 2 · Policy check
         id: policy
@@ -94,9 +108,10 @@ jobs:
           scripts/policy-gate.sh "$EVIDENCE_DIR/plan.json" "$EVIDENCE_DIR"
           scripts/validate-oscal.sh "$EVIDENCE_DIR"
 
+      # Scheduled runs never apply: drift is reported, not silently reverted.
       - name: 3 · Apply
         id: apply
-        if: env.IS_MAIN == 'true'
+        if: env.IS_MAIN == 'true' && env.IS_SCHEDULED != 'true'
         working-directory: ${{ env.TF_DIR }}
         run: |
           terraform apply -input=false -no-color tfplan | tee "$GITHUB_WORKSPACE/$EVIDENCE_DIR/apply.txt"
@@ -123,9 +138,9 @@ jobs:
             --arg run_id "$RUN_ID" --arg attempt "$RUN_ATTEMPT" \
             --arg created "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --arg plan "$PLAN_OUTCOME" --arg policy "$POLICY_OUTCOME" --arg apply "$APPLY_OUTCOME" \
-            --arg framework "HIPAA Security Rule (45 CFR 164 Subpart C)" \
+            --arg framework "HIPAA Security Rule (45 CFR 164 Subpart C)" --arg trigger "$GITHUB_EVENT_NAME" \
             '{repo:$repo, commit:$sha, actor:$actor, run_id:$run_id, run_attempt:$attempt,
-              created_utc:$created, framework:$framework,
+              created_utc:$created, framework:$framework, trigger:$trigger,
               steps:{plan:$plan, policy_check:$policy, apply:$apply},
               files:[]}' > "$EVIDENCE_DIR/manifest.json"
           # Per-file hashes inside the bundle, so any one file can be checked alone.
@@ -145,6 +160,7 @@ jobs:
         env:
           VAULT: ${{ vars.EVIDENCE_BUCKET }}
           BUNDLE: ${{ steps.sign.outputs.bundle }}
+          DRIFT: ${{ steps.plan.outputs.drift }}
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
           SHA: ${{ github.sha }}
@@ -171,6 +187,11 @@ jobs:
             echo '```json'; cat receipt.json; echo '```'
             echo "Verify: \`scripts/verify-evidence.sh ${RUN_ID}-${RUN_ATTEMPT}\`"
           } >> "$GITHUB_STEP_SUMMARY"
+          # Evidence is filed first; then a scheduled drift finding fails the run.
+          if [[ "$DRIFT" == "true" ]]; then
+            echo "::error::Drift detected: live infrastructure differs from main. See plan.txt in the signed bundle."
+            exit 1
+          fi
 
       - name: Keep evidence as a run artifact
         if: always()
