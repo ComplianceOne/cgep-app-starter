@@ -2,7 +2,36 @@
 
 The [cgep-app-starter](https://github.com/GRCEngClub/cgep-app-starter) workload, made audit-defensible against the **HIPAA Security Rule**. The design reasoning is in **[WRITEUP.md](WRITEUP.md)**.
 
-Every push to `main` is planned, checked against seven HIPAA policies, applied, signed with Cosign (keyless, GitHub OIDC), and filed in an S3 Object Lock vault.
+Every push to `main` is planned, checked against seven HIPAA policies, applied, signed with Cosign (keyless, GitHub OIDC), and filed in an S3 Object Lock vault. A daily scheduled run checks live infrastructure for drift and files a signed bundle even when nothing changed.
+
+## Set up and run
+
+Prerequisites: Terraform ≥ 1.10, AWS CLI v2, OPA 1.x, Conftest, Cosign v2, `gh`, `jq`, and `pip install compliance-trestle==5.2.0`.
+
+1. **Bootstrap (once, by hand).** Creates the state bucket and the two GitHub OIDC roles.
+   ```bash
+   cd bootstrap && terraform init && terraform apply
+   ```
+   Set `github_sub_prefix` to your repo's OIDC subject (`gh api repos/<owner>/<repo>/actions/oidc/customization/sub`).
+2. **Point the workload at that state.** Put the `state_bucket` and `state_kms_key_arn` outputs into [terraform/backend.tf](terraform/backend.tf). Backend blocks cannot read variables, so these are literal values.
+3. **Give GitHub the role ARNs and vault name.**
+   ```bash
+   gh variable set AWS_PLAN_ROLE_ARN  --body "<plan_role_arn>"
+   gh variable set AWS_APPLY_ROLE_ARN --body "<apply_role_arn>"
+   gh variable set EVIDENCE_BUCKET    --body "<evidence bucket>"
+   ```
+4. **Deploy through the pipeline.** Open a PR (plan and policy check run), then merge (apply, sign, upload). Do not run `terraform apply` on `terraform/` by hand.
+5. **Smoke test.** `make test` returns `{"submission_id": "...", "status": "received"}`.
+
+Run the checks locally:
+
+```bash
+opa test ./policies                          # policy unit tests (positive + negative per control)
+(cd terraform && terraform plan -out=tfplan && terraform show -json tfplan > plan.json)
+scripts/policy-gate.sh terraform/plan.json   # HIPAA policy gate
+scripts/gap-regression.py                    # re-introduce each gap, confirm the gate blocks it
+scripts/validate-oscal.sh                    # OSCAL validation
+```
 
 ## Verify the evidence
 
