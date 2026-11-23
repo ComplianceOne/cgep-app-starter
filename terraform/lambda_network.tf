@@ -91,3 +91,68 @@ resource "aws_iam_role_policy_attachment" "lambda_vpc" {
   role       = aws_iam_role.lambda.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
+
+# Take ownership of the VPC's default security group and strip its rules,
+# so anything launched without an explicit group gets no network access.
+resource "aws_default_security_group" "main" {
+  vpc_id = aws_vpc.main.id
+
+  tags = { Name = "${local.name_prefix}-default-sg-deny-all" }
+}
+
+######################################################################
+# VPC flow logs — every accepted and rejected connection in the PHI
+# network, to CloudWatch Logs under the audit CMK. HIPAA 164.312(b).
+######################################################################
+
+resource "aws_cloudwatch_log_group" "vpc_flow" {
+  name              = local.vpc_log_group_name
+  retention_in_days = 365
+  kms_key_id        = aws_kms_key.audit.arn
+}
+
+data "aws_iam_policy_document" "vpc_flow_trust" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["vpc-flow-logs.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [local.account_id]
+    }
+  }
+}
+
+resource "aws_iam_role" "vpc_flow" {
+  name               = "${local.name_prefix}-vpc-flow-${local.suffix}"
+  assume_role_policy = data.aws_iam_policy_document.vpc_flow_trust.json
+}
+
+data "aws_iam_policy_document" "vpc_flow" {
+  statement {
+    effect    = "Allow"
+    actions   = ["logs:CreateLogStream", "logs:PutLogEvents", "logs:DescribeLogStreams"]
+    resources = ["${aws_cloudwatch_log_group.vpc_flow.arn}:*"]
+  }
+}
+
+resource "aws_iam_role_policy" "vpc_flow" {
+  name   = "write-flow-log-group"
+  role   = aws_iam_role.vpc_flow.id
+  policy = data.aws_iam_policy_document.vpc_flow.json
+}
+
+resource "aws_flow_log" "main" {
+  vpc_id                   = aws_vpc.main.id
+  traffic_type             = "ALL"
+  log_destination_type     = "cloud-watch-logs"
+  log_destination          = aws_cloudwatch_log_group.vpc_flow.arn
+  iam_role_arn             = aws_iam_role.vpc_flow.arn
+  max_aggregation_interval = 60
+}

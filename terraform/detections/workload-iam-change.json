@@ -1,0 +1,53 @@
+{
+  "source": [
+    "aws.iam"
+  ],
+  "detail-type": [
+    "AWS API Call via CloudTrail"
+  ],
+  "detail": {
+    "eventSource": [
+      "iam.amazonaws.com"
+    ],
+    "eventName": [
+      "PutRolePolicy",
+      "DeleteRolePolicy",
+      "AttachRolePolicy",
+      "DetachRolePolicy",
+      "UpdateAssumeRolePolicy"
+    ],
+    "requestParameters": {
+      "roleName": [
+        {
+          "prefix": "acme-health-intake-"
+        },
+        {
+          "prefix": "grc-pipeline-"
+        }
+      ]
+    },
+    "$or": [
+      {
+        "userIdentity": {
+          "type": [
+            "IAMUser",
+            "Root"
+          ]
+        }
+      },
+      {
+        "userIdentity": {
+          "sessionContext": {
+            "sessionIssuer": {
+              "userName": [
+                {
+                  "anything-but": "grc-pipeline-apply"
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  }
+}

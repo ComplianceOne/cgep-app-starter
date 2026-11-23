@@ -14,6 +14,10 @@ locals {
   trail_name         = "${local.name_prefix}-trail-${local.suffix}"
   trail_arn          = "arn:aws:cloudtrail:${var.aws_region}:${local.account_id}:trail/${local.trail_name}"
   api_log_group_name = "/aws/apigateway/${local.name_prefix}-api-${local.suffix}/access"
+  ct_log_group_name  = "/aws/cloudtrail/${local.name_prefix}-${local.suffix}"
+  vpc_log_group_name = "/aws/vpc/${local.name_prefix}-flow-${local.suffix}"
+  audit_log_group_arns = [for n in [local.api_log_group_name, local.ct_log_group_name, local.vpc_log_group_name] :
+  "arn:aws:logs:${var.aws_region}:${local.account_id}:log-group:${n}"]
 }
 
 resource "aws_kms_key" "audit" {
@@ -50,16 +54,25 @@ resource "aws_kms_key" "audit" {
         Resource  = "*"
       },
       {
-        Sid       = "CloudWatchLogsEncryptsApiAccessLogs"
+        Sid       = "CloudWatchLogsEncryptsAuditLogGroups"
         Effect    = "Allow"
         Principal = { Service = "logs.${var.aws_region}.amazonaws.com" }
         Action    = ["kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:Describe*"]
         Resource  = "*"
         Condition = {
           ArnEquals = {
-            "kms:EncryptionContext:aws:logs:arn" = "arn:aws:logs:${var.aws_region}:${local.account_id}:log-group:${local.api_log_group_name}"
+            "kms:EncryptionContext:aws:logs:arn" = local.audit_log_group_arns
           }
         }
+      },
+      {
+        # EventBridge publishes detection alerts to the encrypted SNS topic.
+        Sid       = "EventBridgePublishesEncryptedAlerts"
+        Effect    = "Allow"
+        Principal = { Service = "events.amazonaws.com" }
+        Action    = ["kms:GenerateDataKey*", "kms:Decrypt"]
+        Resource  = "*"
+        Condition = { StringEquals = { "aws:SourceAccount" = local.account_id } }
       }
       ],
       # Grader read access (see evidence_vault.tf): decrypt via S3 only, and

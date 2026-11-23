@@ -1,0 +1,42 @@
+{
+  "source": [
+    "aws.kms"
+  ],
+  "detail-type": [
+    "AWS API Call via CloudTrail"
+  ],
+  "detail": {
+    "eventSource": [
+      "kms.amazonaws.com"
+    ],
+    "eventName": [
+      "DisableKey",
+      "ScheduleKeyDeletion",
+      "PutKeyPolicy",
+      "DisableKeyRotation"
+    ],
+    "$or": [
+      {
+        "userIdentity": {
+          "type": [
+            "IAMUser",
+            "Root"
+          ]
+        }
+      },
+      {
+        "userIdentity": {
+          "sessionContext": {
+            "sessionIssuer": {
+              "userName": [
+                {
+                  "anything-but": "grc-pipeline-apply"
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  }
+}
