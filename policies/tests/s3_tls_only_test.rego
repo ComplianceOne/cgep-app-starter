@@ -1,3 +1,6 @@
+# Tests for HIPAA 164.312(e)(1) Transmission security — GAP-03 (deny non-TLS requests).
+# Compliant: policy document or known JSON with Deny on aws:SecureTransport=false. Non-compliant: no policy, Allow instead of Deny, opaque policy (fails closed).
+
 package hipaa.s3_tls_only_test
 
 import data.hipaa.s3_tls_only

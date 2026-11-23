@@ -3,8 +3,8 @@
     "uuid": "034389c0-e77a-4a43-8dc5-0bf95cd58d26",
     "metadata": {
       "title": "Acme Health Patient Intake API - HIPAA Security Rule baseline",
-      "last-modified": "2026-10-31T21:13:30+00:00",
-      "version": "1.0.0",
+      "last-modified": "2026-11-23T03:24:31+00:00",
+      "version": "1.1.0",
       "oscal-version": "1.2.1",
       "remarks": "Selects the HIPAA Security Rule controls the patient-intake component implements."
     },
@@ -14,6 +14,7 @@
         "include-controls": [
           {
             "with-ids": [
+              "hipaa-164.308-a-1-ii-d",
               "hipaa-164.308-a-7",
               "hipaa-164.312-a-1",
               "hipaa-164.312-a-2-iv",

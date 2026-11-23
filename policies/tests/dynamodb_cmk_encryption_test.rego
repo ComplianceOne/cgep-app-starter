@@ -1,3 +1,6 @@
+# Tests for HIPAA 164.312(a)(2)(iv) Encryption and decryption — GAP-02 (DynamoDB under customer CMK).
+# Compliant: SSE enabled with kms_key_arn. Non-compliant: AWS-owned default, AWS-managed aws/dynamodb key.
+
 package hipaa.dynamodb_cmk_encryption_test
 
 import data.hipaa.dynamodb_cmk_encryption

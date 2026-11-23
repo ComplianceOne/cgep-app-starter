@@ -11,8 +11,27 @@
 ######################################################################
 
 resource "aws_s3_bucket" "evidence" {
+  #checkov:skip=CKV_AWS_18:Reads and writes of evidence objects are recorded by CloudTrail S3 data events (cloudtrail.tf), and deletions alert via EventBridge (monitoring.tf).
+  #checkov:skip=CKV_AWS_144:Single account and region for the 30-day build. Production moves the vault to a separate log-archive account (WRITEUP.md, next sprint).
   bucket              = "${local.name_prefix}-evidence-${local.suffix}"
   object_lock_enabled = true
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "evidence" {
+  bucket = aws_s3_bucket.evidence.id
+  rule {
+    id     = "abort-incomplete-multipart"
+    status = "Enabled"
+    filter {}
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+}
+
+resource "aws_s3_bucket_notification" "evidence" {
+  bucket      = aws_s3_bucket.evidence.id
+  eventbridge = true
 }
 
 resource "aws_s3_bucket_versioning" "evidence" {

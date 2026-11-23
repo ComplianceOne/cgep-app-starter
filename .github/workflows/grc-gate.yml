@@ -1,9 +1,9 @@
 # .github/workflows/grc-gate.yml
 #
 # One workflow, five named steps, in order:
-#   1. Plan          terraform plan (every run)
+#   1. Plan          terraform plan (every run; on the daily schedule, drift check)
 #   2. Policy check  HIPAA Rego suite via Conftest + OSCAL validation; fails closed (every run)
-#   3. Apply         main only, and only if 1 and 2 passed
+#   3. Apply         push to main only, and only if 1 and 2 passed (never on schedule)
 #   4. Sign          main only: Cosign keyless (GitHub OIDC -> Fulcio -> Rekor)
 #   5. Upload        main only: signed bundle into the Object Lock vault
 #
@@ -18,6 +18,10 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  # Daily: re-check live infrastructure against main (drift) and file a
+  # signed evidence bundle even when nothing changed.
+  schedule:
+    - cron: "17 6 * * *"
 
 permissions:
   id-token: write # AWS OIDC + Cosign keyless signing
@@ -33,27 +37,28 @@ env:
   TF_DIR: terraform
   EVIDENCE_DIR: evidence
   IS_MAIN: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+  IS_SCHEDULED: ${{ github.event_name == 'schedule' }}
 
 jobs:
   grc-gate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           role-to-assume: ${{ github.event_name == 'pull_request' && vars.AWS_PLAN_ROLE_ARN || vars.AWS_APPLY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
           terraform_version: 1.16.1
           terraform_wrapper: false
 
       - name: Setup OPA
-        uses: open-policy-agent/setup-opa@v2
+        uses: open-policy-agent/setup-opa@34a30e8a924d1b03ce2cf7abe97250bbb1f332b5 # v2
         with:
           version: 1.20.2
 
@@ -63,7 +68,7 @@ jobs:
             | sudo tar -xz -C /usr/local/bin conftest
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
 
@@ -72,7 +77,7 @@ jobs:
 
       - name: Install Cosign
         if: env.IS_MAIN == 'true'
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
         with:
           cosign-release: v2.4.3
 
@@ -85,18 +90,30 @@ jobs:
           terraform validate
           # The read-only PR role cannot write the state lock file.
           LOCK=$([[ "$IS_MAIN" == "true" ]] && echo true || echo false)
-          terraform plan -input=false -no-color -lock="$LOCK" -out=tfplan | tee "$GITHUB_WORKSPACE/$EVIDENCE_DIR/plan.txt"
+          # -detailed-exitcode: 0 = no changes, 1 = error, 2 = changes.
+          # On the daily schedule, changes mean live infra drifted from main.
+          set +e
+          terraform plan -input=false -no-color -lock="$LOCK" -detailed-exitcode -out=tfplan | tee "$GITHUB_WORKSPACE/$EVIDENCE_DIR/plan.txt"
+          CODE=${PIPESTATUS[0]}
+          set -e
+          [[ $CODE -ne 1 ]] || exit 1
           terraform show -json tfplan > "$GITHUB_WORKSPACE/$EVIDENCE_DIR/plan.json"
+          DRIFT=$([[ $CODE -eq 2 && "$IS_SCHEDULED" == "true" ]] && echo true || echo false)
+          echo "$DRIFT" > "$GITHUB_WORKSPACE/$EVIDENCE_DIR/drift.txt"
+          echo "drift=$DRIFT" >> "$GITHUB_OUTPUT"
 
       - name: 2 · Policy check
         id: policy
         run: |
           scripts/policy-gate.sh "$EVIDENCE_DIR/plan.json" "$EVIDENCE_DIR"
           scripts/validate-oscal.sh "$EVIDENCE_DIR"
+          # Detection rules against real EventBridge matching (events:TestEventPattern).
+          python3 -m unittest discover -s tests/detections -v 2>&1 | tee "$EVIDENCE_DIR/detection-tests.txt"
 
+      # Scheduled runs never apply: drift is reported, not silently reverted.
       - name: 3 · Apply
         id: apply
-        if: env.IS_MAIN == 'true'
+        if: env.IS_MAIN == 'true' && env.IS_SCHEDULED != 'true'
         working-directory: ${{ env.TF_DIR }}
         run: |
           terraform apply -input=false -no-color tfplan | tee "$GITHUB_WORKSPACE/$EVIDENCE_DIR/apply.txt"
@@ -123,9 +140,9 @@ jobs:
             --arg run_id "$RUN_ID" --arg attempt "$RUN_ATTEMPT" \
             --arg created "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --arg plan "$PLAN_OUTCOME" --arg policy "$POLICY_OUTCOME" --arg apply "$APPLY_OUTCOME" \
-            --arg framework "HIPAA Security Rule (45 CFR 164 Subpart C)" \
+            --arg framework "HIPAA Security Rule (45 CFR 164 Subpart C)" --arg trigger "$GITHUB_EVENT_NAME" \
             '{repo:$repo, commit:$sha, actor:$actor, run_id:$run_id, run_attempt:$attempt,
-              created_utc:$created, framework:$framework,
+              created_utc:$created, framework:$framework, trigger:$trigger,
               steps:{plan:$plan, policy_check:$policy, apply:$apply},
               files:[]}' > "$EVIDENCE_DIR/manifest.json"
           # Per-file hashes inside the bundle, so any one file can be checked alone.
@@ -145,6 +162,7 @@ jobs:
         env:
           VAULT: ${{ vars.EVIDENCE_BUCKET }}
           BUNDLE: ${{ steps.sign.outputs.bundle }}
+          DRIFT: ${{ steps.plan.outputs.drift }}
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
           SHA: ${{ github.sha }}
@@ -171,10 +189,15 @@ jobs:
             echo '```json'; cat receipt.json; echo '```'
             echo "Verify: \`scripts/verify-evidence.sh ${RUN_ID}-${RUN_ATTEMPT}\`"
           } >> "$GITHUB_STEP_SUMMARY"
+          # Evidence is filed first; then a scheduled drift finding fails the run.
+          if [[ "$DRIFT" == "true" ]]; then
+            echo "::error::Drift detected: live infrastructure differs from main. See plan.txt in the signed bundle."
+            exit 1
+          fi
 
       - name: Keep evidence as a run artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: grc-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: |

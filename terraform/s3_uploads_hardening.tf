@@ -47,3 +47,31 @@ resource "aws_s3_bucket_versioning" "uploads" {
     status = "Enabled"
   }
 }
+
+# Explicit, not reliant on the 2023 account default. HIPAA 164.312(a)(1)
+resource "aws_s3_bucket_public_access_block" "uploads" {
+  bucket                  = aws_s3_bucket.uploads.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# Clean up abandoned multipart uploads (partial PHI objects).
+resource "aws_s3_bucket_lifecycle_configuration" "uploads" {
+  bucket = aws_s3_bucket.uploads.id
+  rule {
+    id     = "abort-incomplete-multipart"
+    status = "Enabled"
+    filter {}
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+}
+
+# Object events to EventBridge for detection rules (monitoring.tf).
+resource "aws_s3_bucket_notification" "uploads" {
+  bucket      = aws_s3_bucket.uploads.id
+  eventbridge = true
+}

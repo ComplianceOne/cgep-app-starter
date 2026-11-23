@@ -288,15 +288,16 @@ data "aws_iam_policy_document" "apply_iam" {
   }
 
   statement {
-    sid       = "PassWorkloadRoleToLambdaOnly"
+    sid       = "PassWorkloadRolesToTheirServicesOnly"
     effect    = "Allow"
     actions   = ["iam:PassRole"]
     resources = ["arn:aws:iam::${local.account_id}:role/${local.workload}-*"]
 
+    # Lambda execution role, CloudTrail -> CloudWatch Logs role, VPC flow logs role.
     condition {
       test     = "StringEquals"
       variable = "iam:PassedToService"
-      values   = ["lambda.amazonaws.com"]
+      values   = ["lambda.amazonaws.com", "cloudtrail.amazonaws.com", "vpc-flow-logs.amazonaws.com"]
     }
   }
 

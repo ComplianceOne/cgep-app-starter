@@ -8,6 +8,27 @@ resource "aws_kms_key" "phi" {
   description             = "Acme Health CMK for PHI at rest (intake uploads + submissions)"
   enable_key_rotation     = true
   deletion_window_in_days = 30
+  policy                  = data.aws_iam_policy_document.phi_key.json
+}
+
+# Explicit rather than the implicit default: the account administers the
+# key through IAM, and only IAM grants (the Lambda's lambda_kms policy and
+# AWS service grants for S3/DynamoDB) let anything use it.
+data "aws_iam_policy_document" "phi_key" {
+  #checkov:skip=CKV_AWS_109:KMS key policy, not an identity policy. Resource "*" in a key policy means this key only; the account-root principal delegates use to IAM (AWS's documented default key policy).
+  #checkov:skip=CKV_AWS_111:Same: key policy where "*" is this key and access is granted through IAM, not by this statement.
+  #checkov:skip=CKV_AWS_356:Same: "*" in a key policy is scoped to the key itself.
+  statement {
+    sid       = "AccountAdministersKeyViaIAM"
+    effect    = "Allow"
+    actions   = ["kms:*"]
+    resources = ["*"]
+
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::${local.account_id}:root"]
+    }
+  }
 }
 
 resource "aws_kms_alias" "phi" {

@@ -1,3 +1,6 @@
+# Tests for HIPAA 164.312(a)(1) Access control — GAP-07 (no wildcard IAM actions).
+# Compliant: specific actions. Non-compliant: service wildcard, partial wildcard, opaque jsonencode on a fresh plan (fails closed), known JSON wildcard.
+
 package hipaa.iam_least_privilege_test
 
 import data.hipaa.iam_least_privilege

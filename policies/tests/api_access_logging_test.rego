@@ -1,3 +1,6 @@
+# Tests for HIPAA 164.312(b) Audit controls — GAP-08 (API Gateway access logging).
+# Compliant: access_log_settings with a destination. Non-compliant: stage without access logging.
+
 package hipaa.api_access_logging_test
 
 import data.hipaa.api_access_logging

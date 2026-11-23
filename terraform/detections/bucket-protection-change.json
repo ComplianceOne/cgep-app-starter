@@ -1,0 +1,54 @@
+{
+  "source": [
+    "aws.s3"
+  ],
+  "detail-type": [
+    "AWS API Call via CloudTrail"
+  ],
+  "detail": {
+    "eventSource": [
+      "s3.amazonaws.com"
+    ],
+    "eventName": [
+      "PutBucketPolicy",
+      "DeleteBucketPolicy",
+      "PutBucketVersioning",
+      "PutBucketEncryption",
+      "DeleteBucketEncryption",
+      "PutBucketPublicAccessBlock",
+      "DeletePublicAccessBlock",
+      "PutObjectLockConfiguration",
+      "PutBucketAcl"
+    ],
+    "requestParameters": {
+      "bucketName": [
+        {
+          "prefix": "acme-health-intake-"
+        }
+      ]
+    },
+    "$or": [
+      {
+        "userIdentity": {
+          "type": [
+            "IAMUser",
+            "Root"
+          ]
+        }
+      },
+      {
+        "userIdentity": {
+          "sessionContext": {
+            "sessionIssuer": {
+              "userName": [
+                {
+                  "anything-but": "grc-pipeline-apply"
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  }
+}
