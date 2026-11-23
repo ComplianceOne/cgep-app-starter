@@ -27,6 +27,12 @@ permissions:
   id-token: write # AWS OIDC + Cosign keyless signing
   contents: read
 
+# Explicit bash = `bash -eo pipefail`. Without it, `terraform apply | tee`
+# reports tee's exit code, and a failed apply looks like a success.
+defaults:
+  run:
+    shell: bash
+
 # Never run two applies against the same state at once.
 concurrency:
   group: grc-gate-${{ github.ref }}

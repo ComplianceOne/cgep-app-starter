@@ -37,6 +37,8 @@ The system is the unchanged starter workload (API Gateway, Lambda, DynamoDB, S3,
 
 **Sign and Upload run on `main` even when Plan or Apply fails.** A failed apply is evidence too. Each bundle's `manifest.json` records the outcome of every step and a SHA-256 per file.
 
+**The pipeline once reported a failed apply as a success, and the evidence kept the mistake.** Run `45106298908`, which deployed the monitoring rules, failed partway: AWS rejected the rule tags because tag values cannot contain parentheses. But GitHub Actions runs steps as `bash -e` without `pipefail` unless the shell is set explicitly, so `terraform apply | tee apply.txt` took `tee`'s exit code and the step went green. That bundle's manifest says `apply: success`, while its own `apply.txt` stops mid-apply with no `Apply complete!`. The bundle is under Object Lock, so the record cannot be quietly corrected, which is the point. The fix (`defaults: run: shell: bash`, and tags in the OSCAL control-ID form) shipped in the next PR, and the bundle from that run shows the rules created. What I took from it: a gate is only as honest as its exit codes, so I check `Apply complete!` in the evidence, not just a green step.
+
 ### Decisions the brief left to me
 
 | Decision | Choice | Why |
